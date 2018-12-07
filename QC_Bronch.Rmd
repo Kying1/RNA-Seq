@@ -1,0 +1,287 @@
+---
+title: "QC Analysis"
+author: "KY"
+date: "February 15, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE,eval=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("/Users/Kevin/Desktop/Bronch Study Analysis/")
+#setwd("/Users/ying05/Desktop/Boxplot_R/")
+BALPPSM<-as.matrix(read.csv('BAL_PPM_RNAseq_Total.csv', header = TRUE, check.names=FALSE, row.names = 1))
+Bacteria_annot<-read.csv('Accession_Numbers_with_Taxonomy_Classifications.csv', header = TRUE, stringsAsFactors=F,row.names = 1)
+Sample_annot<-read.csv('RNA-seq_Batches_BAL.csv', header = TRUE, check.names = FALSE, stringsAsFactors=F,row.names = 1)
+all.equal(rownames(Bacteria_annot),rownames(BALPPSM))
+all.equal(rownames(Sample_annot),colnames(BALPPSM))
+save(BALPPSM, Bacteria_annot, Sample_annot, file = "Bronch.RData")
+load("Bronch.RData")
+```
+
+## Details
+This file is used to get simple statistics of PPM for BAL samples. Sample provided contains accession numbers, bacterial phyla, bacterial genus and bacterial species. The code is used to determine how many unique total counts there are, and to remove accession numbers with total reads of 0.
+
+
+
+```{r}
+load("Bronch.RData")
+Bacteria_annot$Total_Reads<-rowSums(BALPPSM)
+# This will add the rows together to get a new total column.
+#PPSM<-BALPPSM[-1:-1,-5] #gets rid of first row and fifth column (smoking status,length of genome)
+head(BALPPSM)
+#head(PPSM)#compare to make sure PPSM was done correctly
+PP_total_zero_removed<- BALPPSM[which(Bacteria_annot[,"Total_Reads"]!=0),]
+print(paste0("There are ",nrow(PP_total_zero_removed),
+             " accession numbers in this matrix without zeros. ",
+             nrow(BALPPSM)-nrow(PP_total_zero_removed),
+             " accession numbers removed."))
+```
+
+## Creating Box Plots
+
+Now that the total zero samples are removed, we want to make box plots of counts by phyla, genus and species: But first we want to see how many unique phyla, genus and species are in the data.
+
+```{r}
+PP_total_zero_removed<- BALPPSM[which(Bacteria_annot[,"Total_Reads"]!=0),]
+phyla<-length(unique(Bacteria_annot$phylum
+                          [which(Bacteria_annot[,"Total_Reads"]!=0)]))
+genus<-length(unique(Bacteria_annot$genus
+                          [which(Bacteria_annot[,"Total_Reads"]!=0)]))
+species<-length(unique(Bacteria_annot$species
+                            [which(Bacteria_annot[,"Total_Reads"]!=0)]))
+print(paste0("There are ",phyla, 
+             " unique phyla.",
+             " There are ",genus, 
+             " unique genus.",
+             " There are ",species, 
+             " unique species."))
+```
+
+
+```{r}
+
+#making barplot using ggplot for phyla/genus/species
+#combined_bar<-PP_total_zero_removed[,c('phylum','genus','species')]
+#unique_phyla<-combined_bar[!duplicated(combined_bar$phylum), ]
+#unique_genus<-combined_bar[!duplicated(combined_bar$genus), ]
+#unique_species<-combined_bar[!duplicated(combined_bar$species), ]
+#library(ggplot2)
+#ggplot(combined_bar,aes(phylum, genus)) + geom_bar(position = "fill", stat = "identity")
+#ggplot((PP_total_zero_removed),aes(x = genus, y = Total_Reads)) + geom_bar())
+#ggplot((PP_total_zero_removed),aes(x = species, y = Total_Reads)) + geom_bar())
+```
+
+##Plot Distributions
+
+Now that the box plots have been made, next up will be to plot distribution of PPSM proportion per samples/million by sample.
+
+```{r} 
+# now will use ggplot to make plots of PPSM/Sample
+#transposing data to make this plot
+#BAL<-read.csv('BAL_PPM_RNAseq_Total.csv', check.names=FALSE)
+#transposed <- BAL[1:16687,1:33] #gets rid of total column
+#BALPPSMt<-t(as.data.frame(BALPPSM)) 
+boxplot(as.data.frame(log10(PP_total_zero_removed+1)),las=2,main="Log Distribution of Per Sample PPSM",ylab="Log 10 PPSM")
+#Not sure why I can't get this done correctly but lets move onto the next step.
+#library(reshape2)
+#PP_total_zero_removed.m <- melt(PP_total_zero_removed,id.vars=c(PP_total_zero_removed[,-5:-33]), measure.vars='AccessionNumber')
+#library(ggplot2)
+#p <- ggplot(PP_total_zero_removed.m) + geom_boxplot(aes(x=Samples, y=PPSM, color=variable))
+#ggplot((BALPPSMt), aes(x=BALPPSMt,y=PPSM)) + geom_boxplot()
+#ggplot(BALPPSMt) + geom_boxplot(aes(x=BALPPSMt$AcessionNumber,y=PPSM)) + facet_wrap(~variable)
+#ggplot(stack(BALPPSMt),aes(x = AccessionNumber, y = Total)) + geom_boxplot()
+```
+
+#now that the box plot by samples are done, next lets look at the principal component analysis to look at clustering by sample extraction batch and sample library generation batch.
+
+```{r}
+#first combine data from transposed BALPPSMt to Batches, to combine alignment information and batch information.
+#PSAtransposed <-PP_total_zero_removed[1:15781,1:32]
+#PSA_BALPPSM_trans<-t(PSAtransposed)
+pca<-(log10(PP_total_zero_removed+1))
+#pca<-prcomp(BALPPSMt)
+library(FactoMineR)
+library(ggplot2)
+library(factoextra)
+Bronch.pca<-PCA(t(pca), graph = FALSE)
+# PCA By Extraction Batch
+# color code in R: http://www.stat.columbia.edu/~tzheng/files/Rcolor.pdf
+```
+Making the PCA plots now by extraction btach, library generation and smoking status.
+```{r}
+extraction_batch<- as.factor(Sample_annot$`Extraction Batch`)
+fviz_pca_ind(Bronch.pca,
+             habillage = extraction_batch, #color by extraction batch
+             palette = c("#00AFBB", "#E7B800", "#FC4E07", "green4", "#868686FF"),
+             title="PCA by Extraction Batch")
+
+# PCA By Library Generation Batch
+library_batch<- as.factor(Sample_annot$`Library Generation Batch`)
+fviz_pca_ind(Bronch.pca,
+             habillage = library_batch, #color by library generation batch
+             palette = c("#00AFBB", "#E7B800"), 
+             title="PCA by Library Generation Batch")
+
+# PCA By Smoking Status
+smoking_status<- as.factor(Sample_annot$`Smoking Status`)
+fviz_pca_ind(Bronch.pca,
+             habillage = smoking_status, #color by library smoking status
+             palette = c("blue", "black", "green", "orangered"),
+             title="PCA by Smoking Status")
+```
+
+# Now that we have made PCA by library batch, extraction batch and smoking status, we will now turn our attention to PCA by bacteria.
+
+```{r}
+library(FactoMineR)
+library(factoextra)
+Bronch2.pca<-PCA(pca, graph=FALSE)
+
+bacteria_phyla<-as.factor(Bacteria_annot$'phylum')
+fviz_pca_ind(Bronch2.pca,geom="point",
+             habillage = bacteria_phyla, #color by bacteria phyla
+             palette = c("violet", "yellowgreen", "steelblue4", "green4",
+                         "tan", "tan2", "slateblue4", "snow3", "sienna",
+                         "tomato", "royalblue4", "orangered", "purple4", 
+                         "navyblue", "mediumaquamarine", "lightblue", 
+                         "honeydew", "hotpink", "gray1", "darkviolet", 
+                         "darkmagenta", "blue", "burlywood", "aliceblue",
+                         "azure", "beige", "chocolate", "bisque", "cornsilk1",
+                         "darkgoldenrod", "gold4", "gray72", "khaki3",
+                         "lightpink"))
+
+```
+
+# Now that PCA have been done, next step is to figure out which reads map to chromosomes versus plasmids.
+
+```{r}
+#making temporary files to make a csv file of if an accession number is chromosome or plasmid
+library(tidyr)
+chromo<-read.csv("Accession_numbers_with_plasmids.csv", header = TRUE)
+temp1<-separate(chromo,col = "Replicons",
+              into = c("chromosome", "plasmid1","plasmid2",
+                       "plasmid3","plasmid4","plasmid5",
+                       "plasmid6","plasmid7","plasmid8",
+                       "plasmid9","plasmid10","plasmid11",
+                       "plasmid12","plasmid13","plasmid14",
+                       "plasmid15","plasmid16","plasmid17",
+                       "plasmid18","plasmid19","plasmid20",
+                       "plasmid21","plasmid22","plasmid23",
+                       "plasmid24","plasmid25","plasmid26",
+                       "plasmid27","plasmid28"), 
+              sep = ";")
+head(temp1)
+#After temp file splitting up into 29 columns, now I will melt the columns away.
+library(ggplot2)
+library(reshape2)
+chromo.m <- melt(temp1, id.vars = "chromosome", na.rm=FALSE)
+mychrom=c()
+myplasmid=c()
+for (i in 1:ncol(chromo.m)) 
+  {tempchrom=grep("chromosome",chromo.m[,1],value = TRUE)
+  tempplasmid=grep("plasmid",chromo.m[,3],value = TRUE)
+  mychrom=c(mychrom,gsub("chromosome.*:","",gsub("/.*","",tempchrom)))
+  myplasmid=c(myplasmid,gsub("plasmid.*:","",gsub("/.*","",tempplasmid)))
+}
+mychrom2=c()
+for (i in 1:ncol(chromo.m)) 
+  {tempchrom=grep("chromosome",chromo.m[,3],value = TRUE)
+  mychrom2=c(mychrom,gsub("chromosome.*:","",gsub("/.*","",tempchrom)))
+} #since there are some chromosomes in column 3, this function adds those chromosomes into the last.
+
+#remove duplicates from chrom and plasmids
+deduped.chromosome<-unique(mychrom2) 
+deduped.plasmid<-unique(myplasmid)
+
+write.csv(deduped.chromosome, file="Deduped_Chromosome.csv", row.names=FALSE, na="")
+write.csv(deduped.plasmid, file="Deduped_Plasmid.csv", row.names=FALSE, na="")
+```
+Now that we have two files, one for plasmid and one for chromosomes, we will now combine both into one and data frame and use this data frame to match to our sample's accession number to compare how many reads come from chromosome and how many reads come from plasmids in our samples.
+```{r}
+chromosome_accession<-read.csv("Deduped_Chromosome.csv",header = TRUE)
+plasmid_accession<-read.csv("Deduped_Plasmid.csv",header = TRUE)
+Chromosome_or_Plasmid_accession<-rbind(chromosome_accession,plasmid_accession,by="Accession_Number")
+write.csv(Chromosome_or_Plasmid_accession, file="Chromo_or_Plasmid.csv", row.names=FALSE, na="")
+```
+Now that we have a complete list of plasmid or chromosome to match our accessions numbers to. So next will match our samples to accession numbers list to then be able to state how many reads we have from plasmid versus reads from chromosomes.
+```{r}
+#chromo_plasmid<-read.csv("Chromo_or_Plasmid.csv",header=TRUE)
+#nomatch<-read.csv("nomatch.csv",header=TRUE,check.names = FALSE,row.names = 1)
+#matching<-merge(nomatch,chromo_plasmid,by.x="row.names",by.y="Accession_Number",sort = FALSE,all.x = TRUE)
+#write.csv(matching, file="match.csv", row.names=FALSE)
+#chrom_or_plasm_count<-merge(PP_total_zero_removed,chromo_plasmid,by.x="row.names",by.y="Accession_Number",sort = FALSE,all.x = TRUE)
+#write.csv(chrom_or_plasm_count, file="Chromo_plasmid.csv", row.names=FALSE)
+library(ggplot2)
+chromo_plasmid_match<-read.csv("Chromo_plasmid.csv",header=TRUE,check.names = FALSE,row.names=1)
+ggplot(chrom_or_plasm_count, aes(Chromosome.or.Plasmid, Total_Reads)) + geom_boxplot() + ylim(0,100000)
+```
+Now that we have which reads are from plasmid and which are from chromosome, we next want to see which samples are those contributing the most reads.
+```{r}
+head(PP_total_zero_removed$Total_Reads)
+```
+Now we will start studying Microbial Dysbiosis by Smoking Status
+Now to do microbial dysbiosis first by grouping all samples in pca by using smoking status in sample annot and then adding across rows to get total by smoking status. After this, will compare top 10 accession numbers to see if the top 10 accession numbers are different by smoking status.
+```{r}
+#Start by separating subjects by smoking status
+smoker_mean<-apply(pca,1,function(x){
+  mean(x[which(Sample_annot$`Smoking Status`=="Smoker")])
+}
+  )
+ecig_mean<-apply(pca,1,function(x){
+  mean(x[which(Sample_annot$`Smoking Status`=="Ecig")])
+}
+  )
+nonsmoker_mean<-apply(pca,1,function(x){
+  mean(x[which(Sample_annot$`Smoking Status`=="Never-Smoker")])
+}
+  )
+#Now that means for all 3 smoking status have been calculated, next is to compare if top 10 or 20 accession numbers are the same between smoking group. First we sort by desceding order and then write to csv file:
+dysbiosis<-rbind(nonsmoker_mean,ecig_mean,smoker_mean)
+boxplot(as.data.frame(t(dysbiosis)))
+ecig_sort<-sort(ecig_mean,decreasing = TRUE)
+nonsmoker_sort<-sort(nonsmoker_mean,decreasing = TRUE)
+smoker_sort<-sort(smoker_mean,decreasing = TRUE)
+
+#T-test to compare all samples using bacteria to see if there is correlation?
+t.test(nonsmoker_mean,smoker_mean)
+t.test(ecig_mean,smoker_mean)
+t.test(nonsmoker_mean,ecig_mean)
+
+#comparing dysbiosis by accession numbers across smoker and non-smoker
+#https://stackoverflow.com/questions/9661469/r-t-test-over-all-columns
+dysbiosis_nonsmoker_smoker<-as.matrix(rbind(nonsmoker_mean,smoker_mean))
+dysbiosis_mean_nonsmoker_smoker<-t(dysbiosis_nonsmoker_smoker)
+bacterial_dysbiosis_nonsmoker_smoker<-apply(dysbiosis_mean_nonsmoker_smoker,1,t.test)
+pval_nonsmoker_smoker<-vapply(bacterial_dysbiosis_nonsmoker_smoker,"[[", 0, i = "p.value")
+head(pval_nonsmoker_smoker)
+length(which(pval_nonsmoker_smoker <= 0.05))
+
+#comparing dysbiosis by accession numbers across ecig and non-smoker
+dysbiosis_nonsmoker_ecig<-as.matrix(rbind(nonsmoker_mean,ecig_mean))
+dysbiosis_mean_nonsmoker_ecig<-t(dysbiosis_nonsmoker_ecig)
+bacterial_dysbiosis_nonsmoker_ecig<-apply(dysbiosis_mean_nonsmoker_ecig,1,t.test)
+pval_nonsmoker_ecig<-vapply(bacterial_dysbiosis_nonsmoker_ecig,"[[", 0, i = "p.value")
+head(pval_nonsmoker_ecig)
+length(which(pval_nonsmoker_ecig <= 0.05))
+
+#comparing dysbiosis by accession numbers across smoker and e-cig
+dysbiosis_ecig_smoker<-as.matrix(rbind(ecig_mean,smoker_mean))
+dysbiosis_mean_ecig_smoker<-t(dysbiosis_ecig_smoker)
+bacterial_dysbiosis_ecig_smoker<-apply(dysbiosis_mean_ecig_smoker,1,t.test)
+pval_ecig_smoker<-vapply(bacterial_dysbiosis_ecig_smoker,"[[", 0, i = "p.value")
+head(pval_ecig_smoker)
+length(which(pval_ecig_smoker <= 0.05))
+```
+Next we will use pairwise t.test, but listed not as paired samples, so that we can do bonferonni adjustment.
+
+rowSums(aggregate(PP_total_zero_removed,by=Sample_annot$`Smoking Status`,FUN=summary(PP_total_zero_removed)))
+rowSums(aggregate(df[df$Category=='M',24:26],by=list(df[df$Category=='M',]$Provider),sum)[,-1])
+#rowSums(PP_total_zero_removed,group = colnames(Sample_annot$`Smoking Status`))
+dysbiosis<- aggregate(colnames(PP_total_zero_removed),
+                      Sample_annot$`Smoking Status`,
+                      rowsum.default(PP_total_zero_removed))
+                       
+bacterial_dysbiosis<-apply(dysbiosis_mean,1,t.test)
+> pval<-vapply(bacterial_dysbiosis,"[[", 0, i = "p.value")
+> head(pval)
+```
